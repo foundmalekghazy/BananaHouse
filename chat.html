@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BananaHouse 🍌 - Alpha 0.1</title>
+<link rel="stylesheet" href="chat.css">
+
+<!-- Firebase -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-storage-compat.js"></script>
+</head>
+<body>
+
+<div class="container">
+
+  <!-- Left panel: Friends + Logout -->
+  <div class="left-panel">
+    <div class="top-left">
+      <h2 class="logo">BananaHouse 🍌</h2>
+      <div class="button-group">
+        <button id="addFriendBtn">Add Friend</button>
+        <button id="logoutBtn">Log Out</button>
+      </div>
+    </div>
+    <ul id="friendsList"></ul>
+  </div>
+
+  <!-- Middle panel: Chat -->
+  <div class="middle-panel">
+    <div id="chatMessages" class="chat-messages"></div>
+    <div class="chat-input">
+      <input type="text" id="messageInput" placeholder="Type a message...">
+      <input type="file" id="imageInput" accept="image/*" style="display:none;">
+      <button id="imageBtn">📎</button>
+      <button id="sendBtn">Send</button>
+      <button id="clearBtn">Delete All Messages</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="version-text">BananaHouse Alpha 0.1</div>
+
+<script>
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyCTmKQoEwgqfPeNNl35O3Qyhp7NwPGRvnw",
+  authDomain: "bananahouse-591cc.firebaseapp.com",
+  projectId: "bananahouse-591cc",
+  storageBucket: "bananahouse-591cc.firebasestorage.app",
+  messagingSenderId: "851569600133",
+  appId: "1:851569600133:web:3ce5155d8b7fcde1e86bec"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+const storage = firebase.storage();
+
+let currentUser;
+let activeFriendUid = null;
+
+// ===== Auth check =====
+auth.onAuthStateChanged(user=>{
+  if(!user){ window.location.href="index.html"; return; }
+  currentUser = user;
+  if(!user.displayName){
+    const username = prompt("Set a username 🐒") || "Anonymous Monkey";
+    user.updateProfile({displayName: username});
+    db.collection('users').doc(user.uid).set({username: username, friends: []}, {merge:true});
+  }
+  loadFriends();
+});
+
+// ===== Logout =====
+document.getElementById('logoutBtn').addEventListener('click', ()=>{
+  auth.signOut().then(()=>window.location.href="index.html");
+});
+
+// ===== Friends system =====
+const friendsList = document.getElementById('friendsList');
+const addFriendBtn = document.getElementById('addFriendBtn');
+
+async function loadFriends(){
+  const doc = await db.collection('users').doc(currentUser.uid).get();
+  const friends = doc.data()?.friends || [];
+  friendsList.innerHTML = '';
+  for(const uid of friends){
+    const fdoc = await db.collection('users').doc(uid).get();
+    const li = document.createElement('li');
+    li.textContent = fdoc.data()?.username || uid;
+    li.addEventListener('click', ()=>openDM(uid));
+    friendsList.appendChild(li);
+  }
+}
+
+addFriendBtn.addEventListener('click', async ()=>{
+  const friendUsername = prompt("Enter friend's username:");
+  if(!friendUsername) return;
+  const query = await db.collection('users').where('username','==',friendUsername).get();
+  if(query.empty) return alert("User not found 🥀");
+  const friendUid = query.docs[0].id;
+  if(friendUid === currentUser.uid) return alert("Can't add yourself");
+  await db.collection('users').doc(currentUser.uid).update({
+    friends: firebase.firestore.FieldValue.arrayUnion(friendUid)
+  });
+  loadFriends();
+});
+
+// ===== Chat system =====
+const chatMessages = document.getElementById('chatMessages');
+const messageInput = document.getElementById('messageInput');
+const sendBtn = document.getElementById('sendBtn');
+const imageInput = document.getElementById('imageInput');
+const imageBtn = document.getElementById('imageBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+imageBtn.addEventListener('click', ()=>imageInput.click());
+
+function openDM(friendUid){
+  activeFriendUid = friendUid;
+  chatMessages.innerHTML = '';
+  listenMessages();
+}
+
+sendBtn.addEventListener('click', async ()=>{
+  if(!activeFriendUid) return;
+  const msg = messageInput.value.trim();
+  messageInput.value = '';
+
+  let imageURL = null;
+  if(imageInput.files[0]){
+    const file = imageInput.files[0];
+    const storageRef = storage.ref().child(`messages/${Date.now()}_${file.name}`);
+    const snap = await storageRef.put(file);
+    imageURL = await snap.ref.getDownloadURL();
+    imageInput.value = '';
+  }
+
+  if(!msg && !imageURL) return;
+
+  const msgObj = {
+    senderUid: currentUser.uid,
+    senderUsername: currentUser.displayName || "Anonymous Monkey",
+    content: msg,
+    imageURL: imageURL || null,
+    timestamp: firebase.firestore.FieldValue.serverTimestamp()
+  };
+
+  const dmId = [currentUser.uid, activeFriendUid].sort().join("_");
+  await db.collection('dm').doc(dmId).collection('messages').add(msgObj);
+});
+
+clearBtn.addEventListener('click', async ()=>{
+  if(!activeFriendUid) return;
+  const dmId = [currentUser.uid, activeFriendUid].sort().join("_");
+  const msgs = await db.collection('dm').doc(dmId).collection('messages').get();
+  msgs.forEach(doc=>doc.ref.delete());
+});
+
+function listenMessages(){
+  if(!activeFriendUid) return;
+  const dmId = [currentUser.uid, activeFriendUid].sort().join("_");
+  db.collection('dm').doc(dmId).collection('messages')
+    .orderBy('timestamp')
+    .onSnapshot(snapshot=>{
+      chatMessages.innerHTML = '';
+      snapshot.forEach(doc=>{
+        const data = doc.data();
+        const div = document.createElement('div');
+        div.classList.add('message');
+
+        if(data.imageURL){
+          const img = document.createElement('img');
+          img.src = data.imageURL;
+          img.style.maxWidth="200px"; img.style.borderRadius="15px"; img.style.display="block"; img.style.marginTop="5px";
+          div.appendChild(img);
+        }
+
+        if(data.content){
+          const textDiv = document.createElement('div');
+          const date = data.timestamp ? data.timestamp.toDate().toLocaleTimeString() : '';
+          textDiv.textContent = `${data.senderUsername} [${date}]: ${data.content}`;
+          div.appendChild(textDiv);
+        }
+
+        chatMessages.appendChild(div);
+      });
+      chatMessages.scrollTop = chatMessages.scrollHeight;
+    });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BananaHouse Login 🍌</title>
+<link rel="stylesheet" href="style.css">
+
+<!-- Firebase scripts -->
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+</head>
+<body>
+
+<div class="login-container">
+  <h1>BananaHouse</h1>
+  <input type="text" id="usernameInput" placeholder="Username">
+  <input type="text" id="emailInput" placeholder="Email">
+  <input type="password" id="passwordInput" placeholder="Password">
+  <button id="signupBtn">Sign Up</button>
+  <button id="loginBtn">Login</button>
+</div>
+
+<script>
+// Firebase config
+const firebaseConfig = {
+  apiKey: "AIzaSyCTmKQoEwgqfPeNNl35O3Qyhp7NwPGRvnw",
+  authDomain: "bananahouse-591cc.firebaseapp.com",
+  projectId: "bananahouse-591cc",
+  storageBucket: "bananahouse-591cc.firebasestorage.app",
+  messagingSenderId: "851569600133",
+  appId: "1:851569600133:web:3ce5155d8b7fcde1e86bec"
+};
+
+// initialize Firebase
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+// login/signup logic
+window.onload = function() {
+  const usernameInput = document.getElementById('usernameInput');
+  const emailInput = document.getElementById('emailInput');
+  const passwordInput = document.getElementById('passwordInput');
+  const signupBtn = document.getElementById('signupBtn');
+  const loginBtn = document.getElementById('loginBtn');
+
+  // SIGNUP
+  signupBtn.addEventListener('click', async () => {
+    const username = usernameInput.value.trim();
+    const email = emailInput.value.trim();
+    const password = passwordInput.value.trim();
+    if(!username || !email || !password) return alert("Fill all fields 🥀");
+
+    try {
+      const userCred = await auth.createUserWithEmailAndPassword(email,password);
+      await db.collection('users').doc(userCred.user.uid).set({ username: username });
+      window.location.href = "chat.html"; // redirect to chat page
+    } catch(e) { alert(e.message); }
+  });
+
+  // LOGIN
+  loginBtn.addEventListener('click', async () => {
+    const email = emailInput.value.trim();
+    const password = passwordInput.value.trim();
+    if(!email || !password) return alert("Fill both fields 🥀");
+
+    try {
+      await auth.signInWithEmailAndPassword(email,password);
+      window.location.href = "chat.html"; // redirect to chat page
+    } catch(e) { alert(e.message); }
+  });
+};
+</script>
+
+</body>
+</html>
